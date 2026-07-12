@@ -1,0 +1,24 @@
+plugins {
+    id 'java-library'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    api 'org.jspecify:jspecify:1.0.0'
+}
+
+base {
+    archivesName = "jmsdfgen-core"
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            artifactId = "jmsdfgen-core"
+        }
+    }
+}

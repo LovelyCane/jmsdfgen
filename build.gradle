@@ -1,0 +1,23 @@
+allprojects {
+    group = 'lovely.cane.jmsdfgen'
+    version = '0.0.1'
+}
+
+subprojects {
+    apply plugin: 'java'
+    apply plugin: 'maven-publish'
+
+    java {
+        withSourcesJar()
+        withJavadocJar()
+    }
+
+    publishing {
+        repositories {
+            maven {
+                name = 'LocalMavenRepo'
+                url = uri('/home/cane/Projects/maven-repo')
+            }
+        }
+    }
+}
