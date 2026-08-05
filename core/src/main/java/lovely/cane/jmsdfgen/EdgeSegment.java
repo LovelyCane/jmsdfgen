@@ -53,6 +53,31 @@ public abstract sealed class EdgeSegment
 
     public abstract Vector2 directionChange(double param);
 
+    private Vector2 cachedStartPoint;
+    private Vector2 cachedEndPoint;
+    private Vector2 cachedStartDir;
+    private Vector2 cachedEndDir;
+
+    public Vector2 startPoint() {
+        if (cachedStartPoint == null) cachedStartPoint = point(0);
+        return cachedStartPoint;
+    }
+
+    public Vector2 endPoint() {
+        if (cachedEndPoint == null) cachedEndPoint = point(1);
+        return cachedEndPoint;
+    }
+
+    public Vector2 startDirection() {
+        if (cachedStartDir == null) cachedStartDir = direction(0);
+        return cachedStartDir;
+    }
+
+    public Vector2 endDirection() {
+        if (cachedEndDir == null) cachedEndDir = direction(1);
+        return cachedEndDir;
+    }
+
     public abstract SignedDistance signedDistance(Vector2 origin, double[] param);
 
     public abstract int scanlineIntersections(double[] x, int[] dy, double y);
@@ -69,8 +94,8 @@ public abstract sealed class EdgeSegment
 
     public void distanceToPerpendicularDistance(SignedDistance distance, Vector2 origin, double param) {
         if (param < 0) {
-            var dir = direction(0).normalize();
-            var aq = Vector2.subtract(origin, point(0));
+            var dir = startDirection().normalize();
+            var aq = Vector2.subtract(origin, startPoint());
             var ts = Vector2.dotProduct(aq, dir);
             if (ts < 0) {
                 var perpendicularDistance = Vector2.crossProduct(aq, dir);
@@ -80,8 +105,8 @@ public abstract sealed class EdgeSegment
                 }
             }
         } else if (param > 1) {
-            var dir = direction(1).normalize();
-            var bq = Vector2.subtract(origin, point(1));
+            var dir = endDirection().normalize();
+            var bq = Vector2.subtract(origin, endPoint());
             var ts = Vector2.dotProduct(bq, dir);
             if (ts > 0) {
                 var perpendicularDistance = Vector2.crossProduct(bq, dir);
@@ -260,33 +285,45 @@ public abstract sealed class EdgeSegment
 
         @Override
         public SignedDistance signedDistance(Vector2 origin, double[] param) {
-            var qa = Vector2.subtract(p[0], origin);
-            var ab = Vector2.subtract(p[1], p[0]);
-            var br = Vector2.subtract(Vector2.subtract(p[2], p[1]), ab);
-            var a = Vector2.dotProduct(br, br);
-            var b = 3 * Vector2.dotProduct(ab, br);
-            var c = 2 * Vector2.dotProduct(ab, ab) + Vector2.dotProduct(qa, br);
-            var d = Vector2.dotProduct(qa, ab);
+            var originX = origin.x;
+            var originY = origin.y;
+            var qaX = p[0].x - originX;
+            var qaY = p[0].y - originY;
+            var abX = p[1].x - p[0].x;
+            var abY = p[1].y - p[0].y;
+            var brX = (p[2].x - p[1].x) - abX;
+            var brY = (p[2].y - p[1].y) - abY;
+            var a = brX * brX + brY * brY;
+            var b = 3 * (abX * brX + abY * brY);
+            var c = 2 * (abX * abX + abY * abY) + (qaX * brX + qaY * brY);
+            var d = qaX * abX + qaY * abY;
             var t = new double[3];
             var solutions = EquationSolver.solveCubic(t, a, b, c, d);
 
-            var epDir = direction(0);
-            var minDistance = Arithmetic.nonZeroSign(Vector2.crossProduct(epDir, qa)) * qa.length();
-            param[0] = -Vector2.dotProduct(qa, epDir) / Vector2.dotProduct(epDir, epDir);
+            var epDir = startDirection();
+            var epDirX = epDir.x;
+            var epDirY = epDir.y;
+            var minDistance = Arithmetic.nonZeroSign(epDirX * qaY - epDirY * qaX) * Math.sqrt(qaX * qaX + qaY * qaY);
+            param[0] = -(qaX * epDirX + qaY * epDirY) / (epDirX * epDirX + epDirY * epDirY);
             {
-                var distance = Vector2.subtract(p[2], origin).length();
+                var dx = p[2].x - originX;
+                var dy = p[2].y - originY;
+                var distance = Math.sqrt(dx * dx + dy * dy);
                 if (distance < Math.abs(minDistance)) {
-                    epDir = direction(1);
-                    minDistance = Arithmetic.nonZeroSign(Vector2.crossProduct(epDir, Vector2.subtract(p[2], origin))) * distance;
-                    param[0] = Vector2.dotProduct(Vector2.subtract(origin, p[1]), epDir) / Vector2.dotProduct(epDir, epDir);
+                    epDir = endDirection();
+                    epDirX = epDir.x;
+                    epDirY = epDir.y;
+                    minDistance = Arithmetic.nonZeroSign(epDirX * dy - epDirY * dx) * distance;
+                    param[0] = ((originX - p[1].x) * epDirX + (originY - p[1].y) * epDirY) / (epDirX * epDirX + epDirY * epDirY);
                 }
             }
             for (var i = 0; i < solutions; ++i) {
                 if (t[i] > 0 && t[i] < 1) {
-                    var qe = Vector2.add(qa, Vector2.add(Vector2.multiply(2 * t[i], ab), Vector2.multiply(t[i] * t[i], br)));
-                    var distance = qe.length();
+                    var qeX = qaX + 2 * t[i] * abX + t[i] * t[i] * brX;
+                    var qeY = qaY + 2 * t[i] * abY + t[i] * t[i] * brY;
+                    var distance = Math.sqrt(qeX * qeX + qeY * qeY);
                     if (distance <= Math.abs(minDistance)) {
-                        minDistance = Arithmetic.nonZeroSign(Vector2.crossProduct(Vector2.add(ab, Vector2.multiply(t[i], br)), qe)) * distance;
+                        minDistance = Arithmetic.nonZeroSign((abX + t[i] * brX) * qeY - (abY + t[i] * brY) * qeX) * distance;
                         param[0] = t[i];
                     }
                 }
@@ -295,9 +332,9 @@ public abstract sealed class EdgeSegment
             if (param[0] >= 0 && param[0] <= 1)
                 return new SignedDistance(minDistance, 0);
             if (param[0] < 0.5)
-                return new SignedDistance(minDistance, Math.abs(Vector2.dotProduct(direction(0).normalize(), qa.normalize())));
+                return new SignedDistance(minDistance, Math.abs(Vector2.dotProduct(startDirection().normalize(), new Vector2(qaX, qaY).normalize())));
             else
-                return new SignedDistance(minDistance, Math.abs(Vector2.dotProduct(direction(1).normalize(), Vector2.subtract(p[2], origin).normalize())));
+                return new SignedDistance(minDistance, Math.abs(Vector2.dotProduct(endDirection().normalize(), Vector2.subtract(p[2], origin).normalize())));
         }
 
         @Override
@@ -476,47 +513,60 @@ public abstract sealed class EdgeSegment
 
         @Override
         public SignedDistance signedDistance(Vector2 origin, double[] param) {
-            var qa = Vector2.subtract(p[0], origin);
-            var ab = Vector2.subtract(p[1], p[0]);
-            var br = Vector2.subtract(Vector2.subtract(p[2], p[1]), ab);
-            var as = Vector2.subtract(Vector2.subtract(Vector2.subtract(p[3], p[2]), Vector2.subtract(p[2], p[1])), br);
+            var originX = origin.x;
+            var originY = origin.y;
+            var qaX = p[0].x - originX;
+            var qaY = p[0].y - originY;
+            var abX = p[1].x - p[0].x;
+            var abY = p[1].y - p[0].y;
+            var brX = (p[2].x - p[1].x) - abX;
+            var brY = (p[2].y - p[1].y) - abY;
+            var asX = ((p[3].x - p[2].x) - (p[2].x - p[1].x)) - brX;
+            var asY = ((p[3].y - p[2].y) - (p[2].y - p[1].y)) - brY;
 
-            var epDir = direction(0);
-            var minDistance = Arithmetic.nonZeroSign(Vector2.crossProduct(epDir, qa)) * qa.length();
-            param[0] = -Vector2.dotProduct(qa, epDir) / Vector2.dotProduct(epDir, epDir);
+            var epDir = startDirection();
+            var epDirX = epDir.x;
+            var epDirY = epDir.y;
+            var minDistance = Arithmetic.nonZeroSign(epDirX * qaY - epDirY * qaX) * Math.sqrt(qaX * qaX + qaY * qaY);
+            param[0] = -(qaX * epDirX + qaY * epDirY) / (epDirX * epDirX + epDirY * epDirY);
             {
-                var distance = Vector2.subtract(p[3], origin).length();
+                var dx = p[3].x - originX;
+                var dy = p[3].y - originY;
+                var distance = Math.sqrt(dx * dx + dy * dy);
                 if (distance < Math.abs(minDistance)) {
-                    epDir = direction(1);
-                    minDistance = Arithmetic.nonZeroSign(Vector2.crossProduct(epDir, Vector2.subtract(p[3], origin))) * distance;
-                    param[0] = Vector2.dotProduct(Vector2.subtract(epDir, Vector2.subtract(p[3], origin)), epDir) /
-                            Vector2.dotProduct(epDir, epDir);
+                    epDir = endDirection();
+                    epDirX = epDir.x;
+                    epDirY = epDir.y;
+                    minDistance = Arithmetic.nonZeroSign(epDirX * dy - epDirY * dx) * distance;
+                    param[0] = ((epDirX - dx) * epDirX + (epDirY - dy) * epDirY) / (epDirX * epDirX + epDirY * epDirY);
                 }
             }
 
             for (var i = 0; i <= CUBIC_SEARCH_STARTS; ++i) {
                 var t = 1.0 / CUBIC_SEARCH_STARTS * i;
-                var qe = Vector2.add(qa, Vector2.add(Vector2.multiply(3 * t, ab),
-                        Vector2.add(Vector2.multiply(3 * t * t, br), Vector2.multiply(t * t * t, as))));
-                var d1 = Vector2.add(Vector2.multiply(3, ab),
-                        Vector2.add(Vector2.multiply(6 * t, br), Vector2.multiply(3 * t * t, as)));
-                var d2 = Vector2.add(Vector2.multiply(6, br), Vector2.multiply(6 * t, as));
-                var improvedT = t - Vector2.dotProduct(qe, d1) / (Vector2.dotProduct(d1, d1) + Vector2.dotProduct(qe, d2));
+                var qeX = qaX + 3 * t * abX + 3 * t * t * brX + t * t * t * asX;
+                var qeY = qaY + 3 * t * abY + 3 * t * t * brY + t * t * t * asY;
+                var d1X = 3 * abX + 6 * t * brX + 3 * t * t * asX;
+                var d1Y = 3 * abY + 6 * t * brY + 3 * t * t * asY;
+                var d2X = 6 * brX + 6 * t * asX;
+                var d2Y = 6 * brY + 6 * t * asY;
+                var improvedT = t - (qeX * d1X + qeY * d1Y) / (d1X * d1X + d1Y * d1Y + qeX * d2X + qeY * d2Y);
                 if (improvedT > 0 && improvedT < 1) {
                     var remainingSteps = CUBIC_SEARCH_STEPS;
                     do {
                         t = improvedT;
-                        qe = Vector2.add(qa, Vector2.add(Vector2.multiply(3 * t, ab),
-                                Vector2.add(Vector2.multiply(3 * t * t, br), Vector2.multiply(t * t * t, as))));
-                        d1 = Vector2.add(Vector2.multiply(3, ab),
-                                Vector2.add(Vector2.multiply(6 * t, br), Vector2.multiply(3 * t * t, as)));
+                        qeX = qaX + 3 * t * abX + 3 * t * t * brX + t * t * t * asX;
+                        qeY = qaY + 3 * t * abY + 3 * t * t * brY + t * t * t * asY;
+                        d1X = 3 * abX + 6 * t * brX + 3 * t * t * asX;
+                        d1Y = 3 * abY + 6 * t * brY + 3 * t * t * asY;
                         if (--remainingSteps == 0) break;
-                        d2 = Vector2.add(Vector2.multiply(6, br), Vector2.multiply(6 * t, as));
-                        improvedT = t - Vector2.dotProduct(qe, d1) / (Vector2.dotProduct(d1, d1) + Vector2.dotProduct(qe, d2));
+                        d2X = 6 * brX + 6 * t * asX;
+                        d2Y = 6 * brY + 6 * t * asY;
+                        improvedT = t - (qeX * d1X + qeY * d1Y) / (d1X * d1X + d1Y * d1Y + qeX * d2X + qeY * d2Y);
                     } while (improvedT > 0 && improvedT < 1);
-                    var distance = qe.length();
+                    var distance = Math.sqrt(qeX * qeX + qeY * qeY);
                     if (distance < Math.abs(minDistance)) {
-                        minDistance = Arithmetic.nonZeroSign(Vector2.crossProduct(d1, qe)) * distance;
+                        minDistance = Arithmetic.nonZeroSign(d1X * qeY - d1Y * qeX) * distance;
                         param[0] = t;
                     }
                 }
@@ -525,9 +575,9 @@ public abstract sealed class EdgeSegment
             if (param[0] >= 0 && param[0] <= 1)
                 return new SignedDistance(minDistance, 0);
             if (param[0] < 0.5)
-                return new SignedDistance(minDistance, Math.abs(Vector2.dotProduct(direction(0).normalize(), qa.normalize())));
+                return new SignedDistance(minDistance, Math.abs(Vector2.dotProduct(startDirection().normalize(), new Vector2(qaX, qaY).normalize())));
             else
-                return new SignedDistance(minDistance, Math.abs(Vector2.dotProduct(direction(1).normalize(), Vector2.subtract(p[3], origin).normalize())));
+                return new SignedDistance(minDistance, Math.abs(Vector2.dotProduct(endDirection().normalize(), Vector2.subtract(p[3], origin).normalize())));
         }
 
         @Override

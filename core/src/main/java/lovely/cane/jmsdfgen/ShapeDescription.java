@@ -169,7 +169,7 @@ public final class ShapeDescription {
         do pos[0]++;
         while (pos[0] < input.length() && (input.charAt(pos[0]) == ' ' || input.charAt(pos[0]) == '\t' || input.charAt(pos[0]) == '\n' || input.charAt(pos[0]) == '\r'));
         start = pos[0];
-        while (pos[0] < input.length() && input.charAt(pos[0]) != ' ' && input.charAt(pos[0]) != '\t' && input.charAt(pos[0]) != '\n' && input.charAt(pos[0]) != '\r')
+        while (pos[0] < input.length() && input.charAt(pos[0]) != ' ' && input.charAt(pos[0]) != '\t' && input.charAt(pos[0]) != '\n' && input.charAt(pos[0]) != '\r' && input.charAt(pos[0]) != ';' && input.charAt(pos[0]) != ')' && input.charAt(pos[0]) != '#')
             pos[0]++;
         try {
             coord.y = Double.parseDouble(input.substring(start, pos[0]));
@@ -212,7 +212,7 @@ public final class ShapeDescription {
         for (var i = 0; i < 4; i++) p[i] = new Vector2(0, 0);
         Vector2 start;
         if (first != null) {
-            p[0] = first;
+            p[0] = Vector2.copy(first);
         } else {
             var res = readCoord(input, pos, p[0]);
             if (res != 2) return res != 1 && readChar(input, pos) == terminator;
@@ -224,8 +224,8 @@ public final class ShapeDescription {
             var color = EdgeColor.WHITE;
             var res = readCoord(input, pos, p[1]);
             if (res == 2) {
-                output.addEdge(new EdgeHolder(p[0], p[1], color));
-                p[0] = p[1];
+                output.addEdge(new EdgeHolder(Vector2.copy(p[0]), Vector2.copy(p[1]), color));
+                p[0] = Vector2.copy(p[1]);
                 continue;
             } else if (res == 1) return false;
 
@@ -235,8 +235,8 @@ public final class ShapeDescription {
             while (true) {
                 switch (c = readChar(input, pos)) {
                     case '#':
-                        output.addEdge(new EdgeHolder(p[0], start, color));
-                        p[0] = start;
+                        output.addEdge(new EdgeHolder(Vector2.copy(p[0]), Vector2.copy(start), color));
+                        p[0] = Vector2.copy(start);
                         break outer;
                     case ';':
                         controlPoints = 0;
@@ -295,22 +295,22 @@ public final class ShapeDescription {
                 if (res == 1) return false;
                 else {
                     if (readChar(input, pos) == '#')
-                        p[1 + controlPoints] = start;
+                        p[1 + controlPoints] = Vector2.copy(start);
                     else return false;
                 }
             }
             switch (controlPoints) {
                 case 0:
-                    output.addEdge(new EdgeHolder(p[0], p[1], color));
-                    p[0] = p[1];
+                    output.addEdge(new EdgeHolder(Vector2.copy(p[0]), Vector2.copy(p[1]), color));
+                    p[0] = Vector2.copy(p[1]);
                     break;
                 case 1:
-                    output.addEdge(new EdgeHolder(p[0], p[1], p[2], color));
-                    p[0] = p[2];
+                    output.addEdge(new EdgeHolder(Vector2.copy(p[0]), Vector2.copy(p[1]), Vector2.copy(p[2]), color));
+                    p[0] = Vector2.copy(p[2]);
                     break;
                 case 2:
-                    output.addEdge(new EdgeHolder(p[0], p[1], p[2], p[3], color));
-                    p[0] = p[3];
+                    output.addEdge(new EdgeHolder(Vector2.copy(p[0]), Vector2.copy(p[1]), Vector2.copy(p[2]), Vector2.copy(p[3]), color));
+                    p[0] = Vector2.copy(p[3]);
                     break;
             }
         }

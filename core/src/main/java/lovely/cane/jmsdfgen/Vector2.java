@@ -171,4 +171,8 @@ public final class Vector2 {
     public static Vector2 divide(Vector2 a, double b) {
         return new Vector2(a.x / b, a.y / b);
     }
+
+    public static Vector2 copy(Vector2 v) {
+        return new Vector2(v.x, v.y);
+    }
 }

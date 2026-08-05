@@ -83,6 +83,10 @@ public sealed interface EdgeSelector<D, C, S extends EdgeSelector<D, C, S>>
 
         public boolean isEdgeRelevant(EdgeCache cache, Vector2 p) {
             var delta = 1.001 * Vector2.subtract(p, cache.point).length();
+            return isEdgeRelevant(cache, p, delta);
+        }
+
+        public boolean isEdgeRelevant(EdgeCache cache, Vector2 p, double delta) {
             return cache.absDistance - delta <= Math.abs(minTrueDistance.distance)
                     || Math.abs(cache.aDomainDistance) < delta
                     || Math.abs(cache.bDomainDistance) < delta
@@ -164,6 +168,29 @@ public sealed interface EdgeSelector<D, C, S extends EdgeSelector<D, C, S>>
             public double bDomainDistance;
             public double aPerpendicularDistance;
             public double bPerpendicularDistance;
+
+            private boolean geometryReady;
+            private Vector2 startPoint;
+            private Vector2 endPoint;
+            private Vector2 startDirN;
+            private Vector2 endDirN;
+            private Vector2 negStartDirN;
+            private Vector2 startBisectorN;
+            private Vector2 endBisectorN;
+
+            public void ensureGeometry(EdgeSegment prev, EdgeSegment edge, EdgeSegment next) {
+                if (geometryReady) return;
+                startPoint = edge.startPoint();
+                endPoint = edge.endPoint();
+                startDirN = edge.startDirection().normalize(true);
+                endDirN = edge.endDirection().normalize(true);
+                negStartDirN = Vector2.negate(startDirN);
+                var prevDirN = prev.endDirection().normalize(true);
+                var nextDirN = next.startDirection().normalize(true);
+                startBisectorN = Vector2.add(prevDirN, startDirN).normalize(true);
+                endBisectorN = Vector2.add(endDirN, nextDirN).normalize(true);
+                geometryReady = true;
+            }
         }
     }
 
@@ -175,40 +202,37 @@ public sealed interface EdgeSelector<D, C, S extends EdgeSelector<D, C, S>>
         @Override
         public void reset(Vector2 p) {
             var delta = DISTANCE_DELTA_FACTOR * Vector2.subtract(p, this.p).length();
-            super.reset(delta);
+            reset(delta);
             this.p = p;
         }
 
         @Override
         public void addEdge(EdgeCache cache, EdgeSegment prev, EdgeSegment edge, EdgeSegment next, EdgeColor color) {
-            if (super.isEdgeRelevant(cache, p)) {
+            if (isEdgeRelevant(cache, p)) {
+                cache.ensureGeometry(prev, edge, next);
                 var paramOut = new double[1];
                 var distance = edge.signedDistance(p, paramOut);
                 var param = paramOut[0];
-                super.addEdgeTrueDistance(edge, distance, param);
+                addEdgeTrueDistance(edge, distance, param);
                 cache.point = p;
                 cache.absDistance = Math.abs(distance.distance);
 
-                var ap = Vector2.subtract(p, edge.point(0.0));
-                var bp = Vector2.subtract(p, edge.point(1.0));
-                var aDir = edge.direction(0.0).normalize(true);
-                var bDir = edge.direction(1.0).normalize(true);
-                var prevDir = prev.direction(1.0).normalize(true);
-                var nextDir = next.direction(0.0).normalize(true);
-                var add = Vector2.dotProduct(ap, Vector2.add(prevDir, aDir).normalize(true));
-                var bdd = -Vector2.dotProduct(bp, Vector2.add(bDir, nextDir).normalize(true));
+                var ap = Vector2.subtract(p, cache.startPoint);
+                var bp = Vector2.subtract(p, cache.endPoint);
+                var add = Vector2.dotProduct(ap, cache.startBisectorN);
+                var bdd = -Vector2.dotProduct(bp, cache.endBisectorN);
                 if (add > 0.0) {
                     var pdHolder = new double[]{distance.distance};
-                    if (PerpendicularDistanceSelectorBase.getPerpendicularDistance(pdHolder, ap, Vector2.negate(aDir))) {
+                    if (PerpendicularDistanceSelectorBase.getPerpendicularDistance(pdHolder, ap, cache.negStartDirN)) {
                         pdHolder[0] = -pdHolder[0];
-                        super.addEdgePerpendicularDistance(pdHolder[0]);
+                        addEdgePerpendicularDistance(pdHolder[0]);
                     }
                     cache.aPerpendicularDistance = pdHolder[0];
                 }
                 if (bdd > 0.0) {
                     var pdHolder = new double[]{distance.distance};
-                    if (PerpendicularDistanceSelectorBase.getPerpendicularDistance(pdHolder, bp, bDir)) {
-                        super.addEdgePerpendicularDistance(pdHolder[0]);
+                    if (PerpendicularDistanceSelectorBase.getPerpendicularDistance(pdHolder, bp, cache.endDirN)) {
+                        addEdgePerpendicularDistance(pdHolder[0]);
                     }
                     cache.bPerpendicularDistance = pdHolder[0];
                 }
@@ -224,7 +248,7 @@ public sealed interface EdgeSelector<D, C, S extends EdgeSelector<D, C, S>>
 
         @Override
         public Double distance() {
-            return super.computeDistance(p);
+            return computeDistance(p);
         }
     }
 
@@ -247,9 +271,11 @@ public sealed interface EdgeSelector<D, C, S extends EdgeSelector<D, C, S>>
 
         @Override
         public void addEdge(PerpendicularDistanceSelectorBase.EdgeCache cache, EdgeSegment prev, EdgeSegment edge, EdgeSegment next, EdgeColor color) {
-            if ((color.has(EdgeColor.RED) && r.isEdgeRelevant(cache, p)) ||
-                    (color.has(EdgeColor.GREEN) && g.isEdgeRelevant(cache, p)) ||
-                    (color.has(EdgeColor.BLUE) && b.isEdgeRelevant(cache, p))) {
+            var delta = 1.001 * Vector2.subtract(p, cache.point).length();
+            if ((color.has(EdgeColor.RED) && r.isEdgeRelevant(cache, p, delta)) ||
+                    (color.has(EdgeColor.GREEN) && g.isEdgeRelevant(cache, p, delta)) ||
+                    (color.has(EdgeColor.BLUE) && b.isEdgeRelevant(cache, p, delta))) {
+                cache.ensureGeometry(prev, edge, next);
                 var paramOut = new double[1];
                 var distance = edge.signedDistance(p, paramOut);
                 var param = paramOut[0];
@@ -259,17 +285,13 @@ public sealed interface EdgeSelector<D, C, S extends EdgeSelector<D, C, S>>
                 cache.point = p;
                 cache.absDistance = Math.abs(distance.distance);
 
-                var ap = Vector2.subtract(p, edge.point(0.0));
-                var bp = Vector2.subtract(p, edge.point(1.0));
-                var aDir = edge.direction(0.0).normalize(true);
-                var bDir = edge.direction(1.0).normalize(true);
-                var prevDir = prev.direction(1.0).normalize(true);
-                var nextDir = next.direction(0.0).normalize(true);
-                var add = Vector2.dotProduct(ap, Vector2.add(prevDir, aDir).normalize(true));
-                var bdd = -Vector2.dotProduct(bp, Vector2.add(bDir, nextDir).normalize(true));
+                var ap = Vector2.subtract(p, cache.startPoint);
+                var bp = Vector2.subtract(p, cache.endPoint);
+                var add = Vector2.dotProduct(ap, cache.startBisectorN);
+                var bdd = -Vector2.dotProduct(bp, cache.endBisectorN);
                 if (add > 0.0) {
                     var pdHolder = new double[]{distance.distance};
-                    if (PerpendicularDistanceSelectorBase.getPerpendicularDistance(pdHolder, ap, Vector2.negate(aDir))) {
+                    if (PerpendicularDistanceSelectorBase.getPerpendicularDistance(pdHolder, ap, cache.negStartDirN)) {
                         pdHolder[0] = -pdHolder[0];
                         if (color.has(EdgeColor.RED)) r.addEdgePerpendicularDistance(pdHolder[0]);
                         if (color.has(EdgeColor.GREEN)) g.addEdgePerpendicularDistance(pdHolder[0]);
@@ -279,7 +301,7 @@ public sealed interface EdgeSelector<D, C, S extends EdgeSelector<D, C, S>>
                 }
                 if (bdd > 0.0) {
                     var pdHolder = new double[]{distance.distance};
-                    if (PerpendicularDistanceSelectorBase.getPerpendicularDistance(pdHolder, bp, bDir)) {
+                    if (PerpendicularDistanceSelectorBase.getPerpendicularDistance(pdHolder, bp, cache.endDirN)) {
                         if (color.has(EdgeColor.RED)) r.addEdgePerpendicularDistance(pdHolder[0]);
                         if (color.has(EdgeColor.GREEN)) g.addEdgePerpendicularDistance(pdHolder[0]);
                         if (color.has(EdgeColor.BLUE)) b.addEdgePerpendicularDistance(pdHolder[0]);
